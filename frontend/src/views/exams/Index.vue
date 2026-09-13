@@ -39,10 +39,8 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../api'
-import { useModal } from '../../composables/useModal'
 
 const router = useRouter()
-const { alert } = useModal()
 const examPapers = ref([])
 const loading = ref(true)
 
@@ -57,12 +55,8 @@ onMounted(async () => {
   }
 })
 
-const startExam = async (paper) => {
-  try {
-    const response = await api.post(`/exams/${paper.id}/start`)
-    router.push(`/exams/${paper.id}`)
-  } catch (e) {
-    alert(e.response?.data?.message || '开始考试失败', '开始考试', 'error')
-  }
+const startExam = (paper) => {
+  // 由考试页调用幂等的 start 接口（已有进行中记录会自动续考）
+  router.push(`/exams/${paper.id}?start=1`)
 }
 </script>

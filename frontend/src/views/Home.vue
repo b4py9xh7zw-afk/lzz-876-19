@@ -71,7 +71,7 @@
         <span class="w-1.5 h-6 bg-purple-500 rounded-full mr-3 shadow-sm shadow-purple-300"></span>
         教师管理
       </h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <router-link to="/questions" class="card-base card-accent-left card-accent-purple p-6 group h-full hover:bg-purple-50/10">
           <div class="flex items-start h-full">
             <div class="flex-shrink-0 w-14 h-14 bg-purple-100/80 rounded-2xl flex items-center justify-center mr-5 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300 shadow-sm">
@@ -110,6 +110,25 @@
           </div>
         </router-link>
         
+        <router-link to="/supervisor/reviews" class="card-base card-accent-left card-accent-red p-6 group h-full hover:bg-red-50/10">
+          <div class="flex items-start h-full">
+            <div class="flex-shrink-0 w-14 h-14 bg-red-100/80 rounded-2xl flex items-center justify-center mr-5 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-sm">
+              <svg class="w-7 h-7 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
+              </svg>
+            </div>
+            <div class="flex-1 flex flex-col justify-between">
+              <div>
+                <h3 class="text-xl font-bold text-gray-900 mb-2 group-hover:text-red-700 transition-colors">断网续考处理</h3>
+                <p class="text-gray-500 text-sm leading-relaxed">区分真实断网、刷新页面与换设备登录，审批延时申请。</p>
+              </div>
+              <div class="mt-4 flex items-center text-sm font-medium text-red-600 opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-300">
+                前往处理 <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+              </div>
+            </div>
+          </div>
+        </router-link>
+
         <router-link v-if="authStore.isAdmin" to="/statistics" class="card-base card-accent-left card-accent-blue p-6 group h-full hover:bg-sky-50/10">
           <div class="flex items-start h-full">
             <div class="flex-shrink-0 w-14 h-14 bg-sky-100/80 rounded-2xl flex items-center justify-center mr-5 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300 shadow-sm">

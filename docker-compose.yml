@@ -193,13 +193,73 @@ services:
               start_time TIMESTAMP NOT NULL COMMENT '开始时间',
               end_time TIMESTAMP NULL COMMENT '提交时间',
               score DECIMAL(5,2) DEFAULT 0.00 COMMENT '得分',
-              status ENUM('in_progress', 'submitted', 'graded') DEFAULT 'in_progress' COMMENT '状态',
+              status ENUM('in_progress', 'submitted', 'graded', 'awaiting_review') DEFAULT 'in_progress' COMMENT '状态',
+              client_session_id VARCHAR(64) NULL COMMENT '当前标签页会话ID',
+              last_boot_id VARCHAR(64) NULL COMMENT '最近页面启动ID',
+              device_fingerprint VARCHAR(128) NULL COMMENT '当前设备指纹',
+              device_label VARCHAR(255) NULL COMMENT '当前设备说明',
+              last_heartbeat_at TIMESTAMP NULL COMMENT '最近心跳时间',
+              heartbeat_count INT UNSIGNED DEFAULT 0 COMMENT '心跳次数',
+              client_clock_offset INT DEFAULT 0 COMMENT '客户端时钟偏差(秒)',
+              offline_seconds_total INT UNSIGNED DEFAULT 0 COMMENT '累计断网时长(秒)',
+              offline_event_count INT UNSIGNED DEFAULT 0 COMMENT '断网续考次数',
+              granted_extra_seconds INT UNSIGNED DEFAULT 0 COMMENT '监考批准的累计延时(秒)',
+              review_reason VARCHAR(50) NULL COMMENT '待审核原因',
+              review_requested_at TIMESTAMP NULL COMMENT '提交监考时间',
+              reviewed_by BIGINT UNSIGNED NULL COMMENT '审核监考ID',
+              reviewed_at TIMESTAMP NULL COMMENT '审核时间',
+              review_decision VARCHAR(20) NULL COMMENT '审核决定',
+              review_extra_seconds INT UNSIGNED NULL COMMENT '本次批准延时(秒)',
+              review_note TEXT NULL COMMENT '审核备注',
               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               INDEX idx_user_id (user_id),
               INDEX idx_exam_paper_id (exam_paper_id),
-              INDEX idx_status (status)
+              INDEX idx_status (status),
+              INDEX idx_record_heartbeat (last_heartbeat_at),
+              INDEX idx_record_review (review_reason)
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='考试记录表';
+
+          CREATE TABLE IF NOT EXISTS exam_answer_drafts (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              exam_record_id BIGINT UNSIGNED NOT NULL COMMENT '考试记录ID',
+              question_id BIGINT UNSIGNED NOT NULL COMMENT '题目ID',
+              answer TEXT NULL COMMENT '暂存答案',
+              status VARCHAR(20) DEFAULT 'unanswered' COMMENT '题目状态: unanswered/answered/flagged',
+              updated_client_at BIGINT UNSIGNED NULL COMMENT '客户端最后修改时间(ms)',
+              synced_at TIMESTAMP NULL COMMENT '最近服务端同步时间',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uk_draft_record_question (exam_record_id, question_id),
+              INDEX idx_draft_record (exam_record_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='答题草稿(断网暂存)表';
+
+          CREATE TABLE IF NOT EXISTS exam_session_events (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              exam_record_id BIGINT UNSIGNED NOT NULL COMMENT '考试记录ID',
+              user_id BIGINT UNSIGNED NOT NULL COMMENT '考生ID',
+              event_type VARCHAR(30) NOT NULL COMMENT '事件类型',
+              event_label VARCHAR(100) NULL COMMENT '事件说明',
+              risk_level VARCHAR(10) DEFAULT 'low' COMMENT '风险等级: low/medium/high',
+              is_cheat TINYINT(1) DEFAULT 0 COMMENT '是否作弊: 人工标记',
+              resume_reason VARCHAR(20) NULL COMMENT '客户端自报续考原因',
+              client_session_id VARCHAR(64) NULL COMMENT '标签页会话ID',
+              last_boot_id VARCHAR(64) NULL COMMENT '上次页面启动ID',
+              device_fingerprint VARCHAR(128) NULL COMMENT '设备指纹',
+              device_label VARCHAR(255) NULL COMMENT '设备说明',
+              ip VARCHAR(45) NULL COMMENT 'IP',
+              user_agent VARCHAR(500) NULL COMMENT 'UA',
+              client_occurred_at BIGINT UNSIGNED NULL COMMENT '客户端事件时间(ms)',
+              server_event_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '服务端事件时间',
+              client_offline_seconds INT NULL COMMENT '客户端自报断网时长(秒)',
+              server_gap_seconds INT NULL COMMENT '服务端心跳缺口(秒)',
+              metadata JSON NULL COMMENT '附加信息',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              INDEX idx_event_record (exam_record_id, id),
+              INDEX idx_event_user (user_id, id),
+              INDEX idx_event_type (event_type, id),
+              INDEX idx_event_risk (risk_level, id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='考试会话事件表(断网/刷新/换设备审计)';
 
           CREATE TABLE IF NOT EXISTS exam_record_answers (
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -238,6 +298,15 @@ services:
       dockerfile: Dockerfile
     container_name: exam-backend
     restart: unless-stopped
+    # 启动前等待数据库就绪，自动执行（幂等的）迁移以补齐断网续考相关表结构
+    command: >
+      sh -c "
+        until php -r \"try { new PDO('mysql:host=db;dbname=exam_system', 'root', 'root'); exit(0); } catch (Throwable \$$e) { exit(1); }\"; do
+          echo 'waiting for database...'; sleep 2;
+        done;
+        php artisan migrate --force;
+        php artisan serve --host=0.0.0.0 --port=8080
+      "
     environment:
       APP_NAME: ExamSystem
       APP_ENV: local

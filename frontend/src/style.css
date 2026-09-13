@@ -106,6 +106,28 @@ html {
   border-color: rgba(99, 102, 241, 0.3);
 }
 
+/* 卡片左侧强调条 */
+.card-accent-left {
+  position: relative;
+}
+
+.card-accent-left::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  border-radius: var(--radius-card) 0 0 var(--radius-card);
+  background: var(--color-primary);
+}
+
+.card-accent-blue::before { background: var(--color-info); }
+.card-accent-green::before { background: var(--color-success); }
+.card-accent-orange::before { background: var(--color-warning); }
+.card-accent-purple::before { background: #8b5cf6; }
+.card-accent-red::before { background: var(--color-danger); }
+
 /* Glass Effect */
 .glass-card {
   background: rgba(255, 255, 255, 0.9);
