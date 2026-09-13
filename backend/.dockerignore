@@ -1,0 +1,43 @@
+# 依赖目录（在容器内安装）
+vendor/
+
+# 日志和缓存
+storage/logs/*
+!storage/logs/.gitkeep
+storage/framework/cache/*
+!storage/framework/cache/.gitkeep
+storage/framework/sessions/*
+!storage/framework/sessions/.gitkeep
+storage/framework/views/*
+!storage/framework/views/.gitkeep
+bootstrap/cache/*
+
+# 版本控制
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 测试
+tests/
+phpunit.xml
+
+# 文档
+*.md
+docs/
+
+# 环境文件（使用 .env.example）
+.env
+.env.local
+.env.production
+
+# Docker 相关
+Dockerfile
+docker-compose*.yml
+.dockerignore
+

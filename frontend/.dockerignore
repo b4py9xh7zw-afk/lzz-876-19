@@ -1,0 +1,31 @@
+# 依赖目录（在容器内安装）
+node_modules/
+
+# 构建输出（在容器内生成）
+dist/
+
+# 版本控制
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 环境文件
+.env
+.env.local
+.env.production
+
+# Docker 相关
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# 文档
+*.md
+docs/
+

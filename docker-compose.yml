@@ -1,0 +1,295 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: exam-db
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: exam_system
+      MYSQL_USER: exam
+      MYSQL_PASSWORD: exam123
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - exam-network
+
+  db-init:
+    image: mysql:8.0
+    container_name: exam-db-init
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+          set -eu
+          for i in $$(seq 1 60); do
+            if mysqladmin ping -h db -uroot -proot --silent; then
+              break
+            fi
+            sleep 1
+          done
+
+          table_exists=$$(mysql -h db -uroot -proot -Nse "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='exam_system' AND table_name='users';")
+          if [ "$$table_exists" = "1" ]; then
+            echo "Database already initialized, skip seed."
+            exit 0
+          fi
+
+          mysql -h db -uroot -proot exam_system <<'SQL'
+          SET NAMES utf8mb4;
+          SET CHARACTER SET utf8mb4;
+          SET character_set_connection=utf8mb4;
+
+          CREATE TABLE IF NOT EXISTS personal_access_tokens (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              tokenable_type VARCHAR(255) NOT NULL,
+              tokenable_id BIGINT UNSIGNED NOT NULL,
+              name VARCHAR(255) NOT NULL,
+              token VARCHAR(64) NOT NULL UNIQUE,
+              abilities TEXT,
+              last_used_at TIMESTAMP NULL,
+              expires_at TIMESTAMP NULL,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_tokenable_type (tokenable_type),
+              INDEX idx_tokenable_id (tokenable_id),
+              INDEX idx_name (name)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='个人访问令牌表';
+
+          CREATE TABLE IF NOT EXISTS users (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              username VARCHAR(50) NOT NULL UNIQUE COMMENT '用户名',
+              email VARCHAR(100) NOT NULL UNIQUE COMMENT '邮箱',
+              password VARCHAR(255) NOT NULL COMMENT '密码(bcrypt加密)',
+              real_name VARCHAR(50) COMMENT '真实姓名',
+              role ENUM('admin', 'teacher', 'student') DEFAULT 'student' COMMENT '角色',
+              status TINYINT(1) DEFAULT 1 COMMENT '状态: 1-启用 0-禁用',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_username (username),
+              INDEX idx_email (email),
+              INDEX idx_role (role)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
+
+          INSERT INTO users (username, email, password, real_name, role, status) VALUES
+          ('admin', 'admin@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '系统管理员', 'admin', 1),
+          ('teacher', 'teacher@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '教师用户', 'teacher', 1),
+          ('student1', 'student1@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '学生用户1', 'student', 1);
+
+          CREATE TABLE IF NOT EXISTS question_categories (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              name VARCHAR(100) NOT NULL COMMENT '分类名称',
+              parent_id BIGINT UNSIGNED DEFAULT 0 COMMENT '父分类ID',
+              sort_order INT DEFAULT 0 COMMENT '排序',
+              status TINYINT(1) DEFAULT 1 COMMENT '状态: 1-启用 0-禁用',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_parent_id (parent_id),
+              INDEX idx_sort_order (sort_order)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='题目分类表';
+
+          INSERT INTO question_categories (id, name, parent_id, sort_order, status) VALUES
+          (1, '计算机基础', 0, 1, 1),
+          (2, '程序设计', 0, 2, 1),
+          (3, '数据库', 0, 3, 1),
+          (4, '操作系统', 1, 1, 1),
+          (5, '数据结构', 1, 2, 1),
+          (6, 'Python', 2, 1, 1),
+          (7, 'Java', 2, 2, 1),
+          (8, 'MySQL', 3, 1, 1),
+          (9, 'MongoDB', 3, 2, 1);
+
+          CREATE TABLE IF NOT EXISTS questions (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              category_id BIGINT UNSIGNED NOT NULL COMMENT '分类ID',
+              type ENUM('single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'essay') NOT NULL COMMENT '题目类型',
+              title TEXT NOT NULL COMMENT '题目内容',
+              options JSON COMMENT '选项(JSON格式)',
+              answer TEXT NOT NULL COMMENT '正确答案',
+              analysis TEXT COMMENT '解析',
+              difficulty TINYINT(1) DEFAULT 1 COMMENT '难度: 1-简单 2-中等 3-困难',
+              score DECIMAL(5,2) DEFAULT 1.00 COMMENT '分值',
+              created_by BIGINT UNSIGNED COMMENT '创建人ID',
+              status TINYINT(1) DEFAULT 1 COMMENT '状态: 1-启用 0-禁用',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_category_id (category_id),
+              INDEX idx_type (type),
+              INDEX idx_difficulty (difficulty),
+              INDEX idx_created_by (created_by)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='题目表';
+
+          INSERT INTO questions (category_id, type, title, options, answer, analysis, difficulty, score, created_by, status) VALUES
+          (4, 'single_choice', '下列哪个不是操作系统？', '{"A": "Windows", "B": "Linux", "C": "Photoshop", "D": "macOS"}', 'C', 'Photoshop是图像处理软件，不是操作系统', 1, 2.00, 2, 1),
+          (4, 'true_false', '操作系统的作用是管理计算机硬件和软件资源。', NULL, 'true', '这是操作系统的基本定义', 1, 1.00, 2, 1),
+          (5, 'single_choice', '下列哪个是线性数据结构？', '{"A": "树", "B": "图", "C": "数组", "D": "图"}', 'C', '数组是线性数据结构', 2, 2.00, 2, 1),
+          (6, 'single_choice', 'Python中用于输出的是哪个函数？', '{"A": "print()", "B": "echo()", "C": "console.log()", "D": "printf()"}', 'A', 'Python使用print()函数输出', 1, 1.00, 2, 1),
+          (6, 'multiple_choice', 'Python的特点有哪些？', '{"A": "简单易学", "B": "跨平台", "C": "编译型语言", "D": "解释型语言"}', 'ABD', 'Python是解释型语言，不是编译型', 1, 3.00, 2, 1),
+          (8, 'single_choice', 'MySQL中用于查询数据的语句是？', '{"A": "SELECT", "B": "INSERT", "C": "UPDATE", "D": "DELETE"}', 'A', 'SELECT用于查询数据', 1, 2.00, 2, 1),
+          (8, 'true_false', 'MySQL是一种关系型数据库管理系统。', NULL, 'true', 'MySQL是最流行的开源关系型数据库之一', 1, 1.00, 2, 1);
+
+          CREATE TABLE IF NOT EXISTS exam_papers (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              title VARCHAR(200) NOT NULL COMMENT '试卷标题',
+              description TEXT COMMENT '试卷描述',
+              total_score DECIMAL(5,2) NOT NULL COMMENT '总分',
+              total_time INT DEFAULT 60 COMMENT '考试时长(分钟)',
+              question_count INT NOT NULL COMMENT '题目数量',
+              type ENUM('fixed', 'random') DEFAULT 'fixed' COMMENT '出题方式: fixed-固定 random-随机',
+              status TINYINT(1) DEFAULT 1 COMMENT '状态: 1-启用 0-禁用',
+              created_by BIGINT UNSIGNED COMMENT '创建人ID',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_created_by (created_by),
+              INDEX idx_status (status)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='试卷表';
+
+          INSERT INTO exam_papers (title, description, total_score, total_time, question_count, type, created_by, status) VALUES
+          ('计算机基础测试', '测试计算机基础知识，包含操作系统和数据结构', 10.00, 30, 3, 'fixed', 2, 1),
+          ('Python入门测试', 'Python基础知识测试', 8.00, 20, 2, 'fixed', 2, 1),
+          ('数据库基础测试', '数据库基础知识测试', 3.00, 15, 2, 'fixed', 2, 1);
+
+          CREATE TABLE IF NOT EXISTS exam_paper_questions (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              exam_paper_id BIGINT UNSIGNED NOT NULL COMMENT '试卷ID',
+              question_id BIGINT UNSIGNED NOT NULL COMMENT '题目ID',
+              sort_order INT DEFAULT 0 COMMENT '排序',
+              score DECIMAL(5,2) NOT NULL COMMENT '该题分值',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              INDEX idx_exam_paper_id (exam_paper_id),
+              INDEX idx_question_id (question_id),
+              UNIQUE KEY uk_paper_question (exam_paper_id, question_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='试卷-题目关联表';
+
+          INSERT INTO exam_paper_questions (exam_paper_id, question_id, sort_order, score) VALUES
+          (1, 1, 1, 2.00),
+          (1, 2, 2, 1.00),
+          (1, 3, 3, 2.00),
+          (2, 4, 1, 1.00),
+          (2, 5, 2, 3.00),
+          (2, 6, 3, 2.00),
+          (3, 6, 1, 2.00),
+          (3, 7, 2, 1.00);
+
+          CREATE TABLE IF NOT EXISTS exam_records (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              user_id BIGINT UNSIGNED NOT NULL COMMENT '考生ID',
+              exam_paper_id BIGINT UNSIGNED NOT NULL COMMENT '试卷ID',
+              start_time TIMESTAMP NOT NULL COMMENT '开始时间',
+              end_time TIMESTAMP NULL COMMENT '提交时间',
+              score DECIMAL(5,2) DEFAULT 0.00 COMMENT '得分',
+              status ENUM('in_progress', 'submitted', 'graded') DEFAULT 'in_progress' COMMENT '状态',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_user_id (user_id),
+              INDEX idx_exam_paper_id (exam_paper_id),
+              INDEX idx_status (status)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='考试记录表';
+
+          CREATE TABLE IF NOT EXISTS exam_record_answers (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              exam_record_id BIGINT UNSIGNED NOT NULL COMMENT '考试记录ID',
+              question_id BIGINT UNSIGNED NOT NULL COMMENT '题目ID',
+              answer TEXT NOT NULL COMMENT '考生答案',
+              is_correct TINYINT(1) DEFAULT 0 COMMENT '是否正确: 1-正确 0-错误',
+              score DECIMAL(5,2) DEFAULT 0.00 COMMENT '得分',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_exam_record_id (exam_record_id),
+              INDEX idx_question_id (question_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='考生答案表';
+
+          CREATE TABLE IF NOT EXISTS cache (
+              `key` VARCHAR(255) NOT NULL PRIMARY KEY,
+              `value` MEDIUMTEXT NOT NULL,
+              `expiration` INT NOT NULL,
+              INDEX idx_expiration (expiration)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Laravel缓存表';
+
+          CREATE TABLE IF NOT EXISTS cache_locks (
+              `key` VARCHAR(255) NOT NULL PRIMARY KEY,
+              `owner` VARCHAR(255) NOT NULL,
+              `expiration` INT NOT NULL
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Laravel缓存锁表';
+          SQL
+
+          echo "Database initialized from inline schema."
+    networks:
+      - exam-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: exam-backend
+    restart: unless-stopped
+    environment:
+      APP_NAME: ExamSystem
+      APP_ENV: local
+      APP_KEY: base64:dGVzdGluZ2tleWZvcnRoZWV4YW1zeXN0ZW0=
+      APP_DEBUG: true
+      APP_URL: http://localhost:9000
+      LOG_CHANNEL: stack
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: exam_system
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      CACHE_DRIVER: file
+      SESSION_DRIVER: file
+      QUEUE_CONNECTION: sync
+    volumes:
+      - backend_storage:/app/storage
+      - backend_logs:/app/storage/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    networks:
+      - exam-network
+    ports:
+      - "9000:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: exam-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: http://localhost:9000/api
+    depends_on:
+      - backend
+    networks:
+      - exam-network
+    ports:
+      - "8080:80"
+
+networks:
+  exam-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local
+  backend_storage:
+    driver: local
+  backend_logs:
+    driver: local
